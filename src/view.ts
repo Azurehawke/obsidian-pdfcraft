@@ -203,8 +203,14 @@ function askName(view: PdfCraftView, suggested: string): Promise<string | null> 
 		const finish = (v: string | null) => {
 			if (done) return;
 			done = true;
-			modal.close();
+			// Resolve first: closing hands focus back to the PdfCraft frame, which can throw in
+			// Obsidian's Modal.close and would otherwise leave Save As waiting forever.
 			resolve(v);
+			try {
+				modal.close();
+			} catch {
+				// The modal is gone either way.
+			}
 		};
 		modal.titleEl.setText("Save a copy as");
 		new Setting(modal.contentEl).setName("File name").setDesc("Saved in the same folder as the PDF.").addText((t) => {

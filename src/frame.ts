@@ -93,8 +93,10 @@ export function makeFrameUrls(bundle: Bundle, params: Record<string, string>): F
 	const js = urlFor(bundle.header.entry.js, new Set());
 	const wasm = urlFor(bundle.header.entry.wasm, new Set());
 
-	// The boot script and styles are files too, not inline: an iframe made from a blob: URL
-	// inherits its creator's content security policy, which may refuse inline scripts.
+	// An iframe made from a blob: URL inherits its creator's content security policy. Obsidian's
+	// allows inline styles but not blob: stylesheets, and doesn't restrict scripts; a host page
+	// that refused inline scripts would still allow this one as a file, so the boot script is a
+	// blob and the styles are inline.
 	const boot = blob(
 		`window.pdfcraftParams = ${JSON.stringify(params)};\n` +
 			`import(${JSON.stringify(js)})\n` +
@@ -102,11 +104,12 @@ export function makeFrameUrls(bundle: Bundle, params: Record<string, string>): F
 			`  .catch((e) => parent.postMessage({ type: "pdfcraft:failed", error: String(e && e.message || e) }, location.origin));\n`,
 		"text/javascript",
 	);
-	const css = blob(bundle.header.css || "html, body { margin: 0; height: 100%; overflow: hidden; } canvas { width: 100%; height: 100%; display: block; outline: none; }", "text/css");
+	// The canvas must fill the page: without these styles it stays at a browser's default 300×150.
+	const css = `html, body { margin: 0; height: 100%; overflow: hidden; } canvas { width: 100%; height: 100%; display: block; outline: none; }\n${bundle.header.css}`;
 	const page = blob(
 		`<!doctype html>\n<html lang="en"><head><meta charset="utf-8">` +
 			`<meta name="viewport" content="width=device-width, initial-scale=1">` +
-			`<title>PdfCraft</title><link rel="stylesheet" href="${css}"></head>` +
+			`<title>PdfCraft</title><style>${css.replace(/<\/style/gi, "<\\/style")}</style></head>` +
 			`<body><canvas id="pdfcraft"></canvas><script type="module" src="${boot}"></script></body></html>`,
 		"text/html",
 	);
