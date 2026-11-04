@@ -113,6 +113,17 @@ jobs:
             styles.css
             pdfcraft-web.bin.gz
 
+      # A trial build's files, downloadable for testing (BRAT ignores prereleases unless asked).
+      - name: Publish trial files
+        if: steps.version.outputs.trial == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete dev-trial --yes --cleanup-tag || true
+          gh release create dev-trial main.js manifest.json styles.css pdfcraft-web.bin.gz \
+            --prerelease --target "$GITHUB_SHA" --title "Trial build (dev branch)" \
+            --notes "Not for installing: test files from the dev branch."
+
       - name: Create release
         if: steps.version.outputs.skip != 'true' && steps.version.outputs.trial != 'true'
         env:
