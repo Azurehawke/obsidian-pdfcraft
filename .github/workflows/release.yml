@@ -1,0 +1,125 @@
+name: Release
+
+# Publishes a release whenever manifest.json on main carries a version that has no release yet:
+# (a push to the dev branch builds everything as a trial and keeps the files as a workflow
+# artifact, without releasing)
+# bump the version (manifest.json, package.json, versions.json) and push. The release and its tag
+# (the bare version, no "v") are created here. Running this workflow by hand from the Actions tab
+# works too.
+#
+# PdfCraft's web app is built from package.json's "pdfcraft" repo and branch, packed into one file
+# (scripts/pack-app.mjs) and attached as pdfcraft-web.bin.gz; main.js pins its SHA-256. BRAT
+# installs main.js, manifest.json and styles.css; the plugin downloads pdfcraft-web.bin.gz itself.
+on:
+  push:
+    branches: [main, dev]
+    paths: [manifest.json, .github/workflows/release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  TRUNK_VERSION: 0.21.14
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide whether to release
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./manifest.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pdfcraft_repo=$(node -p "require('./package.json').pdfcraft.repo")" >> "$GITHUB_OUTPUT"
+          echo "pdfcraft_ref=$(node -p "require('./package.json').pdfcraft.ref")" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "Trial build on $GITHUB_REF_NAME: no release."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "trial=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "$version" >/dev/null 2>&1; then
+            echo "Release $version already exists; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out PdfCraft
+        if: steps.version.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.version.outputs.pdfcraft_repo }}
+          ref: ${{ steps.version.outputs.pdfcraft_ref }}
+          path: pdfcraft
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.version.outputs.skip != 'true'
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.version.outputs.skip != 'true'
+        with:
+          workspaces: pdfcraft
+          key: pdfcraft-web
+
+      - name: Install trunk
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin" trunk
+          trunk --version
+
+      - name: Build PdfCraft's web app
+        if: steps.version.outputs.skip != 'true'
+        working-directory: pdfcraft/apps/pdfcraft-web
+        run: trunk build --release
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.skip != 'true'
+        with:
+          node-version: 22
+
+      - name: Pack PdfCraft
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          commit=$(git -C pdfcraft rev-parse HEAD)
+          pdfversion=$(grep -m1 '^version' pdfcraft/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          node scripts/pack-app.mjs pdfcraft/dist/web --commit "$commit" --version "$pdfversion"
+
+      - name: Build plugin
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          ls -l main.js pdfcraft-web.bin pdfcraft-web.bin.gz
+
+      - uses: actions/upload-artifact@v4
+        if: steps.version.outputs.skip != 'true'
+        with:
+          name: obsidian-pdfcraft-${{ steps.version.outputs.version }}
+          path: |
+            main.js
+            manifest.json
+            styles.css
+            pdfcraft-web.bin.gz
+
+      - name: Create release
+        if: steps.version.outputs.skip != 'true' && steps.version.outputs.trial != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit=$(git -C pdfcraft rev-parse --short HEAD)
+          gh release create "${{ steps.version.outputs.version }}" --target "$GITHUB_SHA" \
+            main.js manifest.json styles.css pdfcraft-web.bin.gz \
+            --title "${{ steps.version.outputs.version }}" \
+            --notes "PdfCraft web app built from ${{ steps.version.outputs.pdfcraft_repo }}@${commit} (${{ steps.version.outputs.pdfcraft_ref }}). Install with BRAT; the plugin downloads pdfcraft-web.bin.gz the first time you open a PDF in PdfCraft."

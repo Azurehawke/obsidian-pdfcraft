@@ -1,0 +1,10 @@
+{
+	"id": "pdfcraft",
+	"name": "PdfCraft",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "Open vault PDFs in PdfCraft to mark up, fill in, organize and edit them, saving back to the same file. Obsidian's own PDF viewer stays the default.",
+	"author": "Azurehawke",
+	"authorUrl": "https://github.com/Azurehawke",
+	"isDesktopOnly": false
+}

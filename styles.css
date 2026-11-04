@@ -1,0 +1,34 @@
+/* PdfCraft tab: the app fills the tab; a status line covers it while it loads. */
+.pdfcraft-view {
+	padding: 0 !important;
+	overflow: hidden;
+	position: relative;
+}
+
+.pdfcraft-frame {
+	border: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
+.pdfcraft-frame.pdfcraft-hidden {
+	visibility: hidden;
+}
+
+.pdfcraft-status {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: var(--size-4-4);
+	text-align: center;
+	color: var(--text-muted);
+	background: var(--background-primary);
+	z-index: 1;
+	white-space: pre-wrap;
+}
+
+.pdfcraft-status.pdfcraft-error {
+	color: var(--text-error);
+}
